@@ -1,8 +1,12 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Reflection;
 
 namespace SzbHelper
 {
@@ -445,8 +449,86 @@ namespace SzbHelper
             }
             return primeFactors;
         }
-
+        /// <summary>
+        /// <br></br>
+        /// Everything converted to string in properties --> no objects
+        /// <br></br><br></br>
+        /// Obviusly class/struct creation is needed
+        /// <br></br>
+        /// Return object list [you have to convert the list into the class/struct list]      
+        /// </summary>
+        /// <param name="url">url where the json coming from</param>
+        /// <param name="classname">Name of the class what you want</param>            
+        public List<object> LoadJsonFromWeb(string url, string classname)
+        {
+            HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
+            string jsonValue = "";
+            using (HttpWebResponse response = request.GetResponse() as HttpWebResponse)
+            {
+                StreamReader reader = new StreamReader(response.GetResponseStream());
+                jsonValue = reader.ReadToEnd();
+            }
+            List<object> lista = JsonConvert.DeserializeObject<List<object>>(jsonValue);
+            return createListFromJson(lista, classname);
+        }
         //Inside voids
+        /// <summary>
+        /// Create Object list from Json JObject
+        /// </summary>
+        /// <param name="lista">list of Jobjects</param>
+        /// <param name="classname">Name of the class/struct what you created</param>
+        /// <returns></returns>
+        private List<object> createListFromJson(List<object> lista, string classname)
+        {
+            List<object> returnlista = new List<object>();
+            var myclass = CreateByTypeName(classname);
+            foreach (JObject item in lista)
+            {
+                var myitem = CreateByTypeName(classname);
+                foreach (PropertyInfo prop in myclass.GetType().GetProperties())
+                {
+                    PropertyInfo propinfo = myitem.GetType().GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance);
+                    if (null != propinfo && propinfo.CanWrite)
+                    {
+                        List<JProperty> proplista = item.Properties().ToList();
+                        foreach (JProperty jprop in proplista)
+                        {
+                            if (jprop.Name.ToString().ToUpper() == prop.Name.ToUpper())
+                            {
+                                object data = jprop.Value.ToString();
+                                propinfo.SetValue(myitem, data);
+                                break;
+                            }
+                        }
+                    }
+                }
+                returnlista.Add(myitem);
+            }
+            return returnlista;
+        }
+        /// <summary>
+        /// Create Object by the string name of class / struct
+        /// </summary>
+        /// <param name="typeName"></param>
+        /// <returns></returns>
+        private static object CreateByTypeName(string typeName)
+        {
+            // scan for the class type
+            var type = (from assembly in AppDomain.CurrentDomain.GetAssemblies()
+                        from t in assembly.GetTypes()
+                        where t.Name == typeName  // you could use the t.FullName as well
+                        select t).FirstOrDefault();
+
+            if (type == null)
+                throw new InvalidOperationException("Type not found");
+
+            return Activator.CreateInstance(type);
+        }
+        /// <summary>
+        /// Create dictionary
+        /// </summary>
+        /// <param name="lan"></param>
+        /// <returns></returns>
         private static Dictionary<string, string> createMonths(languages lan)
         {
             Dictionary<string, string> language_months = new Dictionary<string, string>();
@@ -506,6 +588,12 @@ namespace SzbHelper
             language_months.Add("dec".ToUpper(), "12");
             return language_months;
         }
+        /// <summary>
+        /// Convert the date with dictionary
+        /// </summary>
+        /// <param name="date"></param>
+        /// <param name="dictionary"></param>
+        /// <returns></returns>
         private string date_convert(string date, Dictionary<string, string> dictionary)
         {
             date = date.ToUpper();
